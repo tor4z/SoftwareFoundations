@@ -1,11 +1,12 @@
 MAKE         := make
 COQ_MAKEFILE := coq_makefile
+COQ_FLAGS    := -Q . LF
 
 
 all: lib
 
-coq.mk: _CoqProject
-	$(COQ_MAKEFILE) -f $< -o $@ *.v
+coq.mk:
+	$(COQ_MAKEFILE) $(COQ_FLAGS) -o $@ *.v
 
 
 .PHONY: lib
