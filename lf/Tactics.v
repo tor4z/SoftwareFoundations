@@ -13,7 +13,7 @@ Theorem silly2 :
   n = m -> (n = m -> [n;o] = [m;p]) -> [n;o] = [m;p].
 Proof.
   intros n m o p eq1 eq2.
-  apply eq2.
+  apply eq2 in eq1.
   apply eq1.
 Qed.
 
@@ -193,6 +193,8 @@ Proof.
   rewrite H''.
   reflexivity.
 Qed.
+
+
 
 
 Theorem discriminate_ex1 : forall (n m : nat),
