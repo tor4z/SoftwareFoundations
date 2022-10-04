@@ -1061,7 +1061,7 @@ Module BreakImp.
   Inductive ceval : com -> state -> result -> state -> Prop :=
     | E_Skip : forall st,
       st =[ CSKip ]=> st / SContinue
-    where "st '=[' c ']=>' st' '/' s" := ceval c st s st'.
+    where "st '=[' c ']=>' st' '/' s" := (ceval c st s st').
   
   
 
