@@ -174,3 +174,158 @@ Definition parseNumber (xs : list token)
   end.
 
 
+Fixpoint parsePrimaryExp (steps : nat) (xs : list token)
+                        : optionE (aexp * list token) :=
+  match steps with
+  | 0 => NoneE "Too many recursive calls"
+  | S steps' =>
+    TRY ' (i, rest) <- parseIdentifier xs ;;
+        SomeE (AId i, rest)
+    OR
+    TRY ' (n, rest) <- parseNumber xs ;;
+        SomeE (ANum n, rest)
+    OR
+        ' (e, rest) <- firstExpect "(" (parseSumExp steps') xs ;;
+        ' (u, rest') <- expect ")" rest ;;
+        SomeE (e, rest')
+  end
+
+with parseProductExp (steps : nat) (xs : list token) :=
+  match steps with
+  | 0 => NoneE "Too many recursive calls."
+  | S steps' =>
+    ' (e, rest) <- parsePrimaryExp steps' xs ;;
+    ' (es, rest') <- many (firstExpect "*" (parsePrimaryExp steps'))
+                          steps' rest ;;
+      SomeE (fold_left AMult es e, rest')
+  end
+
+with parseSumExp (steps : nat) (xs : list token) :=
+  match steps with
+  | 0 => NoneE "Too many recursive calls"
+  | S steps' =>
+    ' (e, rest) <- parseProductExp steps' xs ;;
+    ' (es, rest') <- many (fun xs =>
+        TRY ' (e, rest') <- firstExpect "+" (parseProductExp steps') xs ;;
+            SomeE ((true, e), rest')
+        OR
+            ' (e, rest') <- firstExpect "-" (parseProductExp steps') xs ;;
+            SomeE ((false, e), rest')
+      ) steps' rest ;;
+    SomeE (fold_left (fun e0 term =>
+                      match term with
+                      | (true, e) => APlus e0 e
+                      | (false, e) => AMinus e0 e
+                      end)
+            es e,
+      rest')
+  end.
+
+
+Definition parseAExp := parseSumExp.
+
+
+Fixpoint parseAtomExp (steps : nat) (xs : list token) :=
+  match steps with
+  | 0 => NoneE "Too many recursive calls"
+  | S steps' =>
+    TRY ' (u, rest) <- expect "true" xs ;;
+        SomeE (BTrue, rest)
+    OR
+    TRY ' (u, rest) <- expect "false" xs ;;
+        SomeE (BFalse, rest)
+    OR
+    TRY ' (e, rest) <- firstExpect "~" (parseAtomExp steps') xs ;;
+        SomeE (BNot e, rest)
+    OR
+    TRY ' (e, rest) <- firstExpect "(" (parseConjunctionExp steps') xs ;;
+        ' (u, rest') <- expect ")" rest ;;
+        SomeE (e, rest')
+    OR
+        ' (e, rest) <- parseProductExp steps' xs ;;
+          TRY ' (e', rest') <- firstExpect "=" (parseAExp steps') rest ;;
+              SomeE (BEq e e', rest')
+          OR
+          TRY ' (e', rest') <- firstExpect "<=" (parseAExp steps') rest ;;
+              SomeE (BLe e e', rest')
+          OR
+              NoneE "Expected '=' or '<=' after arithmetic expression"
+  end
+
+with parseConjunctionExp (steps : nat) (xs : list token) :=
+  match steps with
+  | 0 => NoneE "Too many recursive calls"
+  | S steps' =>
+    ' (e, rest) <- parseAtomExp steps' xs ;;
+    ' (es, rest') <- many (firstExpect "&&" (parseAtomExp steps')) steps' rest ;;
+    SomeE (fold_left BAnd es e, rest')
+  end.
+
+
+Definition parseBExp := parseConjunctionExp.
+
+Check parseConjunctionExp.
+
+Definition testParsing {X : Type}
+                       (p : nat -> list token -> optionE (X * list token))
+                       (s : string) :=
+  let t := tokenize s in p 100 t.
+
+
+Eval compute in
+  testParsing parseProductExp "x.y.(x.x).x".
+Eval compute in
+  testParsing parseConjunctionExp
+  "~(x = x && x * x <= (x * x) * x) && x = x".
+
+
+Fixpoint parseSimpleCommand (steps : nat) (xs : list token) :=
+  match steps with
+  | 0 => NoneE "Too many recursive calls"
+  | S steps' =>
+    TRY ' (u, rest) <- expect "skip" xs ;;
+      SomeE (<{skip}>, rest)
+    OR
+    TRY ' (e, rest) <- firstExpect "if" (parseBExp steps') xs ;;
+        ' (c, rest') <- firstExpect "then" (parseSequencedCommand steps') rest ;;
+        ' (c', rest'') <- firstExpect "else" (parseSequencedCommand steps') rest' ;;
+        ' (tt, rest''') <- expect "end" rest'';;
+        SomeE (<{if e then c else c' end}>, rest''')
+    OR
+    TRY ' (e, rest) <- firstExpect "while" (parseBExp steps') xs ;;
+        ' (c, rest') <- firstExpect "do" (parseSequencedCommand steps') rest ;;
+        ' (u, rest'') <- expect "end" rest' ;;
+        SomeE (<{while e do c end}>, rest'')
+    OR
+    TRY ' (i, rest) <- parseIdentifier xs ;;
+        ' (e, rest') <- firstExpect ":=" (parseAExp steps') rest ;;
+        SomeE (<{i := e}>, rest')
+    OR
+        NoneE "Expecting a command"
+  end
+
+with parseSequencedCommand (steps : nat) (xs : list token) :=
+  match steps with
+  | 0 => NoneE "Too many recursive calls"
+  | S steps' =>
+    ' (c, rest) <- parseSimpleCommand steps' xs ;;
+    TRY ' (c', rest') <- firstExpect ";" (parseSequencedCommand steps') rest ;;
+      SomeE (<{c ; c'}>, rest')
+    OR
+      SomeE (c, rest)
+  end.
+
+
+Definition bignumber := 1000.
+
+
+Definition parse (str : string) : optionE com :=
+  let tokens := tokenize str in
+  match parseSequencedCommand bignumber tokens with
+  | SomeE (c, []) => SomeE c
+  | SomeE (_, t::_) => NoneE ("Trailing tokens remaining: " ++ t)
+  | NoneE err => NoneE err
+  end.
+
+
+
